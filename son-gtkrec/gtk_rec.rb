@@ -41,7 +41,6 @@ Bundler.require :default, ENV['RACK_ENV'].to_sym
 
 ['helpers', 'routes', 'models'].each do |dir|
   Dir[File.join(File.dirname(__FILE__), dir, '**', '*.rb')].each do |file|
-    puts "Requiring file #{file}"
     require file
   end
 end
@@ -69,12 +68,17 @@ class GtkRec < Sinatra::Base
   use Rack::Session::Cookie, :key => 'rack.session', :domain => 'foo.com', :path => '/', :expire_after => 2592000, :secret => '$0nata'
   
   # Logging
+  MODULE='GtkRec'
 	enable :logging
-  set :logger_level, :debug # or :fatal, :error, :warn, :info
+
   FileUtils.mkdir(File.join(settings.root, 'log')) unless File.exists? File.join(settings.root, 'log')
   logfile = File.open(File.join('log', ENV['RACK_ENV'])+'.log', 'a+')
   logfile.sync = true
-  logger = Logger.new(logfile)
+  set :logger, Logger.new(logfile)
+  raise 'Can not proceed without a logger file' if settings.logger.nil?
+  set :logger_level, (settings.logger_level ||= 'debug').to_sym # can be debug, fatal, error, warn, or info
+  logger.info(MODULE) {"Started at #{settings.time_at_startup}"}
+  logger.info(MODULE) {"Logger level at :#{settings.logger_level}"}
     
   enable :cross_origin
 
@@ -82,7 +86,9 @@ class GtkRec < Sinatra::Base
   # "/records/vnfr/vnf-instances"
   if settings.repositories
     set :services_repository, Repository.new(settings.repositories+'/nsr/ns-instances', logger)
+    logger.debug(MODULE) {"Services repository: #{settings.services_repository.inspect}"}
     set :functions_repository, Repository.new(settings.repositories+'/vnfr/vnf-instances', logger)
+    logger.debug(MODULE) {"Functions repository: #{settings.functions_repository.inspect}"}
   else
     logger.error(MODULE) {'>>>Repository url not defined, application being terminated!!'}
     Process.kill('TERM', Process.pid)

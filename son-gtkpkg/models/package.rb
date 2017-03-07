@@ -32,12 +32,14 @@ require 'pp'
 require 'securerandom'
 require 'rubygems'
 require 'zip'
+require 'json'
 
 class Package
 
   DEFAULT_META_DIR = 'META-INF'
   DEFAULT_MANIFEST_FILE_NAME = 'MANIFEST.MF'
   DEFAULT_PATH = File.join(DEFAULT_META_DIR, DEFAULT_MANIFEST_FILE_NAME)
+  CLASS = self.name
   
   attr_accessor :descriptor
   
@@ -60,7 +62,7 @@ class Package
     
     @url = @@catalogue.url
     if params[:descriptor]
-      @descriptor = params[:descriptor]
+     @descriptor = params[:descriptor]
       @input_folder = File.join('tmp', SecureRandom.hex)
       FileUtils.mkdir_p @input_folder unless File.exists? @input_folder
       @output_folder = File.join( 'public', 'packages', @descriptor['uuid'])
@@ -69,7 +71,7 @@ class Package
       @package_file = params[:io]
     else
       @logger.error 'Package.initialize: either @descriptor or @io must be given'
-    end 
+    end
   end
     
   # Builds a package file from its descriptors, and returns a handle to it
@@ -186,6 +188,47 @@ class Package
     packages
   end
   
+  def self.delete(uuid)
+    method = CLASS + __method__.to_s
+    @logger.debug(method) {'entered with uuid='+uuid}
+    @@catalogue.delete(uuid)
+  end
+
+  def store_package_file()
+    message = "Package.#{__method__}"
+    saved_zip = @@catalogue.create_zip(@package_file)
+    if saved_zip
+      @logger.debug(message) {"catalogue_response is #{saved_zip}"}
+      JSON.parse(saved_zip)
+    else
+      @logger.debug(message) {'failled to store zip with no response'}
+      nil
+    end
+  end
+  
+  def fetch_package_file() # TODO: which parameters to use?
+    message = "Package.#{__method__}"
+    loaded_zip = @@catalogue.create_zip(@package_file) # TODO: replace create_zip by... load_zip?
+    if loaded_zip
+      @logger.debug(message) {"catalogue_response is #{loaded_zip}"}
+      JSON.parse(loaded_zip)
+    else
+      @logger.debug(message) {'failled to load zip with no response'}
+      nil
+    end
+  end
+
+  def add_sonpackage_id(desc_uuid, sonp_uuid)
+    response = @@catalogue.set_sonpackage_id(desc_uuid, sonp_uuid)
+    if response.nil?
+      @logger.debug('Package.add_sonpackage_id'){'Updated descriptor with params : descriptor_uuid=' + desc_uuid + ', sonpackage_uuid=' + sonp_uuid}
+      nil
+    else
+      @logger.debug('Package.add_sonpackage_id'){'failed to store son-package-uuid in package descriptor'}
+      response
+    end
+  end
+
   private
   
   def duplicate_package?(desc)
@@ -294,7 +337,7 @@ class Package
   def duplicated_package?(descriptor)
     @@catalogue.find({'vendor'=>descriptor['vendor'], 'name'=>descriptor['name'], 'version'=>descriptor['version']})
   end
-  
+
   def store()
     @logger.debug('Package.store') {"descriptor "+@descriptor.to_s}
     saved_descriptor = @@catalogue.create(@descriptor)
@@ -308,46 +351,47 @@ class Package
   end
 
   def store_package_service_and_functions
-    @logger.debug('Package.store_package_service_and_functions') {"@package is #{@package}"}
-    @logger.debug('Package.store_package_service_and_functions') {"@service is #{@service}"}
-    @logger.debug('Package.store_package_service_and_functions') {"@functions is #{@functions}"}
+    log_message = 'Package.'+__method__.to_s
+    @logger.debug(log_message) {"@package is #{@package}"}
+    @logger.debug(log_message) {"@service is #{@service}"}
+    @logger.debug(log_message) {"@functions is #{@functions}"}
     
     # The verification of duplicates may have to migrate to the router, in order to make it return '200' instead of '201' 
     package_descriptor = duplicated_package?(@descriptor)
     if package_descriptor.one?
-      @logger.error('Package.store_package_service_and_functions') {"package exists: #{package_descriptor[0]}"}
+      @logger.error(log_message) {"package exists: #{package_descriptor[0]}"}
       package_descriptor[0]
     else
       saved_descriptor=store()
       if saved_descriptor
-        @logger.debug "Package.store_package_service_and_functions: stored package #{saved_descriptor}"
-        if @service
-          @logger.debug "Package.store_package_service_and_functions: service is #{@service}"
+        @logger.debug(log_message) {"stored package #{saved_descriptor}"}
+        if @service #.size > 0
+          @logger.debug(log_message) {"service is #{@service.inspect}"}
           stored_service = @service.store()
           if stored_service
-            @logger.debug "Package.store_package_service_and_functions: stored service #{stored_service}"
+            @logger.debug(log_message) {"stored service #{stored_service}"}
           else
             # TODO: what if storing a service goes wrong?
             # rollback!
-            @logger.debug "Package.store_package_service_and_functions: service and package rollback should happen here"
+            @logger.debug(log_message) {"service and package rollback should happen here"}
           end
         end
-        if @functions.size
+        if @functions.size > 0
           @functions.each do |vf|
-            @logger.debug "Package.store_package_service_and_functions: vf = #{vf}"
+            @logger.debug(log_message) {"vf = #{vf}"}
             function = vf.store()
             if function
-              @logger.debug "Package.store_package_service_and_functions: stored function #{function}"
+              @logger.debug(log_message) {"stored function #{function}"}
               # TODO: rollback if failled
             else
-              @logger.debug "Package.store_package_service_and_functions: function, service and package rollback should happen here"
+              @logger.debug(log_message) {"function, service and package rollback should happen here"}
             end
           end
         end
-        @logger.debug('Package.store_package_service_and_functions') {"saved_descriptor is #{saved_descriptor}"}
+        @logger.debug(log_message) {"saved_descriptor is #{saved_descriptor}"}
         saved_descriptor
       else
-        @logger.debug "Package.store_package_service_and_functions: failled to store package with descriptor=#{@descriptor}"
+        @logger.debug(log_message) { "failled to store package with descriptor=#{@descriptor}"}
         {}
       end
     end

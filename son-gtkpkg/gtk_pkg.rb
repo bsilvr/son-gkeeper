@@ -39,9 +39,11 @@ require 'zip'
 require 'bundler'
 Bundler.require :default, ENV['RACK_ENV'].to_sym
 
-require_relative 'routes/init'
-require_relative 'helpers/init'
-require_relative 'models/init'
+['helpers', 'routes', 'models'].each do |dir|
+  Dir[File.join(File.dirname(__FILE__), dir, '**', '*.rb')].each do |file|
+    require file
+  end
+end
 
 class GtkPkg < Sinatra::Base
   register Sinatra::ConfigFile
@@ -53,7 +55,7 @@ class GtkPkg < Sinatra::Base
   set :root, File.dirname(__FILE__)
   set :public_folder, File.join(File.dirname(__FILE__), 'public')
   set :bind, '0.0.0.0'
-  set :time_at_startup, Time.now.utc
+  set :began_at, Time.now.utc
   set :environments, %w{development test integration qualification demonstration}
   set :environment, ENV['RACK_ENV'] || :development
   config_file File.join( [root, 'config', 'services.yml.erb'] )
@@ -61,19 +63,29 @@ class GtkPkg < Sinatra::Base
   use Rack::Session::Cookie, :key => 'rack.session', :domain => 'foo.com', :path => '/', :expire_after => 2592000, :secret => '$0nata'
   
   # Logging
+  MODULE='GtkPkg'
 	enable :logging
-  set :logger_level, :debug # or :fatal, :error, :warn, :info
   FileUtils.mkdir(File.join(settings.root, 'log')) unless File.exists? File.join(settings.root, 'log')
   logfile = File.open(File.join('log', ENV['RACK_ENV'])+'.log', 'a+')
   logfile.sync = true
-  logger = Logger.new(logfile)
+  set :logger, Logger.new(logfile)
+  raise 'Can not proceed without a logger file' if settings.logger.nil?
+  set :logger_level, (settings.logger_level ||= 'debug').to_sym # can be debug, fatal, error, warn, or info
+  logger.info(MODULE) {"Started at #{settings.began_at}"}
+  logger.info(MODULE) {"Logger level at :#{settings.logger_level}"}
     
   enable :cross_origin
+  #enable :method_override
 
   if GtkPkg.settings.catalogues
-   set :packages_catalogue, Catalogue.new(GtkPkg.settings.catalogues+'/packages', logger)
-   set :services_catalogue, Catalogue.new(GtkPkg.settings.catalogues+'/network-services', logger)
-   set :functions_catalogue, Catalogue.new(GtkPkg.settings.catalogues+'/vnfs', logger)
+   set :son_packages_catalogue, Catalogue.new(settings.catalogues+'/son-packages', logger)
+   logger.debug('GtkPkg') {'SON-packages Catalogue URL='+settings.son_packages_catalogue.url}
+   set :packages_catalogue, Catalogue.new(settings.catalogues+'/packages', logger)
+   logger.debug('GtkPkg') {'Packages Catalogue URL='+settings.packages_catalogue.url}
+   set :services_catalogue, Catalogue.new(settings.catalogues+'/network-services', logger)
+   logger.debug('GtkPkg') {'Services Catalogue URL='+settings.services_catalogue.url}
+   set :functions_catalogue, Catalogue.new(settings.catalogues+'/vnfs', logger)
+   logger.debug('GtkPkg') {'Functions Catalogue URL='+settings.functions_catalogue.url}
   else
     logger.error('GtkPkg') {'    >>>Catalogue url not defined, application being terminated!!'}
     Process.kill('TERM', Process.pid)
@@ -83,6 +95,9 @@ class GtkPkg < Sinatra::Base
     c.unicode_names = true
 	  c.on_exists_proc = true
 	  c.continue_on_exists_proc = true
-  end  
-  logger.info "GtkPkg started at #{settings.time_at_startup}"
+  end
+  
+  def query_string
+    request.env['QUERY_STRING'].nil? ? '' : '?' + request.env['QUERY_STRING'].to_s
+  end
 end

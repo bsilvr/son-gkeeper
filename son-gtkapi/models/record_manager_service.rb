@@ -25,59 +25,29 @@
 ## acknowledge the contributions of their colleagues of the SONATA 
 ## partner consortium (www.sonata-nfv.eu).
 # encoding: utf-8
-class RecordManagerService
+require './models/manager_service.rb'
+
+class RecordManagerService < ManagerService
   
   JSON_HEADERS = { 'Accept'=> 'application/json', 'Content-Type'=>'application/json'}
-  CLASS = 'GtkApi::RecordManagerService'
+  LOG_MESSAGE = 'GtkApi::' + self.name
   
-  def initialize(url, logger)
-    @url = url
-    @logger = logger
-  end
-    
-  def find_records(params)
-    method = "GtkApi::RecordManagerService.find_records(#{params}): "
-    headers = JSON_HEADERS
-    kind = params['kind']
-    params.delete('kind')
-    headers[:params] = params unless params.empty?
-    @logger.debug(method) {"headers=#{headers}"}
-    begin
-      @logger.debug(method) {"getting #{kind} from #{@url}"}
-      response = RestClient.get(@url+'/'+kind, headers) 
-      @logger.debug(method) {"response=#{response}"}
-      JSON.parse response.body
-    rescue => e
-      @logger.error(method) {"#{e.message} - #{format_error(e.backtrace)}"}
-      nil 
-    end
+  def self.config(url:)
+    method = LOG_MESSAGE + "##{__method__}(url=#{url})"
+    raise ArgumentError.new('RecordManagerService can not be configured with nil url') if url.nil?
+    raise ArgumentError.new('RecordManagerService can not be configured with empty url') if url.empty?
+    @@url = url
+    GtkApi.logger.debug(method) {'entered'}
   end
   
-  def find_service_by_uuid(uuid)
-    method = "GtkApi::RecordManagerService.find_service_by_uuid(#{uuid}): "
-    headers = JSON_HEADERS
-    begin
-      response = RestClient.get(@url+'/services/'+uuid, headers) 
-      @logger.debug(method) {"response=#{response}"}
-      JSON.parse response.body
-    rescue => e
-      @logger.error(method) {"#{e.message} - #{format_error(e.backtrace)}"}
-      nil 
-    end
+  def self.find_records(params)
+    #params['kind']
+    kind = params.delete('kind')
+    records= find(url: @@url + '/' + kind, params: params, log_message: LOG_MESSAGE + "##{__method__}(#{params})")
+    vectorize_hash records
   end
   
-  def get_log
-    method = "GtkApi::RecordManagerService.get_log: "
-    @logger.debug(method) {'entered'}
-    full_url = @url+'/admin/logs'
-    @logger.debug(method) {'url=' + full_url}
-    RestClient.get(full_url)      
-  end
-  
-  private
-  
-  def format_error(backtrace)
-    first_line = backtrace[0].split(":")
-    "In "+first_line[0].split("/").last+", "+first_line.last+": "+first_line[1]
+  def self.find_record_by_uuid(uuid)
+    find(url: @@url + '/' + kind + '/' + uuid, log_message: LOG_MESSAGE + "##{__method__}(#{uuid})") #+ '/records/' 
   end
 end

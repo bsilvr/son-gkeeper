@@ -40,9 +40,11 @@ require 'sinatra/logger'
 require 'bundler'
 Bundler.require :default, ENV['RACK_ENV'].to_sym
 
-require_relative 'routes/init'
-require_relative 'helpers/init'
-require_relative 'models/init'
+['helpers', 'routes', 'models'].each do |dir|
+  Dir[File.join(File.dirname(__FILE__), dir, '**', '*.rb')].each do |file|
+    require file
+  end
+end
 
 # Main class supporting the Gatekeeper's Service Management micro-service
 class GtkSrv < Sinatra::Base
@@ -68,11 +70,15 @@ class GtkSrv < Sinatra::Base
   
   # Logging
 	enable :logging
-  set :logger_level, :debug # or :fatal, :error, :warn, :info
+
   FileUtils.mkdir(File.join(settings.root, 'log')) unless File.exists? File.join(settings.root, 'log')
   logfile = File.open(File.join('log', ENV['RACK_ENV'])+'.log', 'a+')
   logfile.sync = true
-  logger = Logger.new(logfile)
+  set :logger, Logger.new(logfile)
+  raise 'Can not proceed without a logger file' if settings.logger.nil?
+  set :logger_level, (settings.logger_level ||= 'debug').to_sym # can be debug, fatal, error, warn, or info
+  logger.info(MODULE) {"Started at #{settings.time_at_startup}"}
+  logger.info(MODULE) {"Logger level at :#{settings.logger_level}"}
     
   enable :cross_origin
 

@@ -29,10 +29,14 @@
 require 'tempfile'
 require 'json'
 require 'pp'
+require 'uri'
+require 'net/http'
+require 'rest-client'
 
 class Catalogue
   
   attr_accessor :url
+  CLASS = self.name
   
   def initialize(url, logger)
     @url = url
@@ -51,9 +55,26 @@ class Catalogue
       nil
     end
   end
+
+  def create_zip(zip)
+    #url = URI("http://api.int.sonata-nfv.eu:4002/catalogues/son-packages")
+    url = URI(@url)
+    http = Net::HTTP.new(url.host, url.port)
+    data = File.read(zip)  #File.read("/usr/test.amr")
+    request = Net::HTTP::Post.new(url)
+    request.body = data
+    # These fields are mandatory
+    request["content-type"] = 'application/zip'
+    request["content-disposition"] = 'attachment; filename=<filename.son>'
+    response = http.request(request)
+    @logger.debug("Catalogue response: " + response.read_body)
+    response.read_body
+    #puts response.read_body
+    # Response should return code 201, and ID of the stored son-package
+  end
   
   def find_by_uuid(uuid)
-    @logger.debug "Catalogue.find_by_uuid(#{uuid})"
+    @logger.debug CLASS+".find_by_uuid(#{uuid})"
     headers = {'Accept'=>'application/json', 'Content-Type'=>'application/json'}
     #headers[:params] = uuid
     begin
@@ -66,7 +87,7 @@ class Catalogue
   end
   
   def find(params)
-    method = 'Catalogue.find: '
+    method = 'Catalogue.find'
     headers = {'Accept'=>'application/json', 'Content-Type'=>'application/json'}
     headers[:params] = params unless params.empty?
     @logger.debug(method) {"params=#{params}, headers=#{headers}"}
@@ -83,9 +104,44 @@ class Catalogue
   def update
   end
   
-  def delete
+  def delete(uuid)
+    method = CLASS + __method__.to_s
+    @logger.debug(method) {'entered with uuid='+uuid}
+    begin
+      uri = URI(@url + '/' + uuid)
+      req = Net::HTTP::Delete.new(uri)
+      req.content_type = 'application/json'
+      response = Net::HTTP.start(uri.hostname, uri.port) { |http|
+        http.request(req)
+      }
+      @logger.debug(method) {"response was #{response}"}
+      response.code.to_i
+    rescue => e
+      @logger.error format_error(e.backtrace)
+      nil
+    end
   end
   
+  def set_sonpackage_id(desc_uuid, sonp_uuid)
+    method = CLASS + __method__.to_s
+    @logger.debug(method) {"desc_uuid=#{desc_uuid}, sonp_uuid=#{sonp_uuid}"}
+    headers = {'Content-Type'=>'application/json'}
+    begin
+      uri = URI(@url + '/' + desc_uuid.to_s + '?sonp_uuid=' + sonp_uuid.to_s)
+      req = Net::HTTP::Put.new(uri)
+      req.content_type = 'application/json'
+      response = Net::HTTP.start(uri.hostname, uri.port) { |http|
+        http.request(req)
+      }
+      #response = RestClient.put(@url + '/' + desc_uuid.to_s + '?sonp_uuid=' + sonp_uuid.to_s, :content_type => 'application/json')
+      @logger.debug(method) {"response was #{response}"}
+      nil
+    rescue => e
+      @logger.error format_error(e.backtrace)
+      e.to_json
+    end
+  end
+
   private
   
   def format_error(backtrace)

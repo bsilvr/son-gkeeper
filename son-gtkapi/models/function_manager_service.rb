@@ -25,46 +25,26 @@
 ## acknowledge the contributions of their colleagues of the SONATA 
 ## partner consortium (www.sonata-nfv.eu).
 # encoding: utf-8
-class FunctionManagerService
+require './models/manager_service.rb'
+
+class FunctionManagerService < ManagerService
     
-    # We're not yet using this: it allows for multiple implementations, such as Fakes (for testing)
-    attr_reader :url, :logger
-    
-    def initialize(url, logger)
-      @url = url
-      @logger = logger
-    end
+  JSON_HEADERS = { 'Accept'=> 'application/json', 'Content-Type'=>'application/json'}
+  LOG_MESSAGE = 'GtkApi::' + self.name
   
-    def find_functions_by_uuid(uuid)
-      headers = { 'Accept'=> 'application/json', 'Content-Type'=>'application/json'}
-      headers[:params] = uuid
-      begin
-        response = RestClient.get( @url + "/functions/#{uuid}", headers)
-      rescue => e
-        @logger.error "FunctionManagerService#find_functions_by_uuid: e=#{e.backtrace}"
-        nil 
-      end
-    end
-    
-    def find_functions(params)
-      headers = { 'Accept'=> 'application/json', 'Content-Type'=>'application/json'}
-      headers[:params] = params unless params.empty?
-      @logger.debug "FunctionManagerService#find_functions(#{params}): headers=#{headers}"
-      begin
-        response = RestClient.get(@url + '/functions', headers) 
-        @logger.debug "FunctionManagerService#find_functions(#{params}): response=#{response}"
-        JSON.parse response.body
-      rescue => e
-        @logger.error "FunctionManagerService#find_functions: e=#{e.backtrace}"
-        nil 
-      end
-    end
-    
-    def get_log
-      method = "GtkApi::FunctionManagerService.get_log: "
-      @logger.debug(method) {'entered'}
-      full_url = @url+'/admin/logs'
-      @logger.debug(method) {'url=' + full_url}
-      RestClient.get(full_url)      
-    end
+  def self.config(url:)
+    method = LOG_MESSAGE + "#config(url=#{url})"
+    raise ArgumentError.new('FunctionManagerService can not be configured with nil url') if url.nil?
+    raise ArgumentError.new('FunctionManagerService can not be configured with empty url') if url.empty?
+    @@url = url
+    GtkApi.logger.debug(method) {'entered'}
+  end
+
+  def self.find_function_by_uuid(uuid)
+    find(url: @@url + '/functions/' + uuid, log_message: LOG_MESSAGE + "##{__method__}(#{uuid})")
+  end
+  
+  def self.find_functions(params)
+    find(url: @@url + '/functions', params: params, log_message: LOG_MESSAGE + "##{__method__}(#{params})")
+  end
 end
